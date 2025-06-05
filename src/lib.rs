@@ -32,7 +32,7 @@ pub struct State {
     pub stakers: HashSet<String>,
 }
 
-// Config structure for immutable contract settings
+// Config structure for contract settings
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub admin: Addr,

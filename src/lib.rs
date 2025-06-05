@@ -1,18 +1,17 @@
-
 use cosmwasm_std::{
     to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError,
     Addr, Uint128, Timestamp, Order, WasmMsg
 };
 use cosmwasm_schema::schemars::JsonSchema;
 use cw20::Cw20ExecuteMsg;
-use cw721::Cw721ReceiveMsg;
-use schemars::JsonSchema;
+use cosmwasm_schema::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use cw_storage_plus::{Item, Map};
+use rand::Rng;
 
-const MIN_STAKING_DAYS: u64 = 7; // Minimum 7 days staking requirement
-const SECONDS_IN_DAY: u64 = 86400; // 24 hours * 60 minutes * 60 seconds
+const MIN_STAKING_DAYS: u64 = 7; 
+const SECONDS_IN_DAY: u64 = 86400; 
 
 // Represents a staker's information
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -52,20 +51,20 @@ pub struct InstantiateMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub enum QueryMsg {
+    GetEligibleStakers {},
+    GetState {},
+    GetStaker { address: String },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum ExecuteMsg {
     Stake {},
     Unstake {},
     DrawWinner {},
     ClaimReward {},
-    // Add message to fund the pot
+    SetConfig { admin: String, nft_contract: String, reward_token: String },
     FundPot {},
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub enum QueryMsg {
-    GetEligibleStakers {},
-    GetState {},
-    GetStaker { address: String },
 }
 
 pub fn instantiate(
@@ -95,7 +94,7 @@ pub fn instantiate(
 
 pub fn execute_draw_winner(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
 ) -> StdResult<Response> {
     let config = CONFIG.load(deps.storage)?;
@@ -109,8 +108,8 @@ pub fn execute_draw_winner(
     }
     
     // Use Cosmos SDK pseudo-randomness
-    let random_bytes = deps.api.random(&env.block.time.nanos().to_be_bytes())?;
-    let random_index = random_bytes[0] as usize % state.stakers.len();
+    let mut rng = rand::thread_rng();
+    let random_index = rng.gen_range(0..state.stakers.len());
     let winner = state.stakers.iter().nth(random_index).unwrap().clone();
     
     state.last_winner = Some(winner.clone());
@@ -236,7 +235,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 fn query_eligible_stakers(deps: Deps, env: Env) -> StdResult<Vec<(String, Staker)>> {
-    let mut eligible_stakers = Vec::new();
+    let mut eligible_stakers: Vec<(String, Staker)> = Vec::new();
     
     // Iterate through all stakers
     STAKERS.range(deps.storage, None, None, Order::Ascending)
@@ -244,7 +243,7 @@ fn query_eligible_stakers(deps: Deps, env: Env) -> StdResult<Vec<(String, Staker
         .for_each(|(address, staker)| {
             // Check if staker has met minimum staking requirement
             if staker.staked_at.plus_seconds(MIN_STAKING_DAYS * SECONDS_IN_DAY) <= env.block.time {
-                eligible_stakers.push((address.to_string(), staker));
+                eligible_stakers.push((String::from_utf8_lossy(&address).to_string(), staker));
             }
         });
     
@@ -259,7 +258,7 @@ pub fn get_total_staked_nfts(deps: Deps) -> StdResult<u64> {
 
 // Add helper function to get staker weight for DAO DAO
 pub fn get_staker_weight(deps: Deps, address: String) -> StdResult<u64> {
-    let staker = STAKERS.may_load(deps.storage, &address)?;
+    let staker = STAKERS.may_load(deps.storage, address)?;
     Ok(staker.map_or(0, |s| s.nft_count))
 }
 
@@ -269,6 +268,6 @@ fn query_state(deps: Deps) -> StdResult<State> {
 }
 
 fn query_staker(deps: Deps, address: String) -> StdResult<Option<Staker>> {
-    let staker = STAKERS.may_load(deps.storage, &address)?;
+    let staker = STAKERS.may_load(deps.storage, address)?;
     Ok(staker)
 }
